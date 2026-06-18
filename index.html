@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>하노이의 탑 프로 애니메이션 시뮬레이터</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
+    body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
+    
+    /* 원판 스타일 */
+    .disk {
+      position: absolute;
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    /* 로그 스크롤바 커스텀 */
+    #logs-container::-webkit-scrollbar { width: 4px; }
+    #logs-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  </style>
+</head>
+<body class="p-4 md:p-8">
+
+  <div class="max-w-6xl mx-auto">
+    <!-- 헤더 영역 -->
+    <div class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Hanoi Top <span class="text-indigo-600">Pro</span></h1>
+        <p class="text-slate-500 font-medium">부드러운 애니메이션 교육용 시뮬레이터</p>
+      </div>
+      <div class="flex gap-4">
+        <div class="text-right">
+          <p class="text-xs font-bold text-slate-400 uppercase">최소 이동</p>
+          <p id="min-moves" class="text-xl font-black text-indigo-600">15</p>
+        </div>
+        <div class="text-right">
+          <p class="text-xs font-bold text-slate-400 uppercase">현재 이동</p>
+          <p id="current-moves" class="text-xl font-black text-slate-900">0</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      
+      <!-- 설정 패널 -->
+      <div class="lg:col-span-1 space-y-6">
+        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+          <label class="block text-sm font-bold text-slate-700 mb-4">원판 개수: <span id="disk-val" class="text-indigo-600">4</span></label>
+          <input type="range" id="disk-range" min="3" max="8" value="4" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+          
+          <label class="block text-sm font-bold text-slate-700 mt-8 mb-4">재생 속도</label>
+          <input type="range" id="speed-range" min="100" max="1500" value="700" step="100" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" style="direction: rtl;">
+          <div class="flex justify-between text-[10px] text-slate-400 mt-2 font-bold uppercase">
+            <span>Fast</span>
+            <span>Slow</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <button id="play-pause" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
+            <i data-lucide="play" class="w-5 h-5 fill-current"></i> <span>시작하기</span>
+          </button>
+          <button id="reset" class="w-full py-4 bg-white text-slate-600 border border-slate-200 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2">
+            <i data-lucide="refresh-cw" class="w-5 h-5"></i> 초기화
+          </button>
+        </div>
+
+        <!-- 이동 로그 -->
+        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 h-[300px] flex flex-col">
+          <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <i data-lucide="list-ordered" class="w-4 h-4 text-indigo-500"></i> 이동 경로
+          </h3>
+          <div id="logs-container" class="flex-1 overflow-y-auto space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- 메인 시뮬레이션 보드 -->
+      <div class="lg:col-span-3 bg-white rounded-[40px] shadow-sm border border-slate-200 p-8 relative min-h-[500px] flex items-end justify-around">
+        
+        <!-- 기둥들 -->
+        <div id="peg-0" class="relative w-4 h-64 bg-slate-200 rounded-full flex justify-center">
+            <span class="absolute -bottom-10 font-black text-slate-300 text-2xl">A</span>
+        </div>
+        <div id="peg-1" class="relative w-4 h-64 bg-slate-200 rounded-full flex justify-center">
+            <span class="absolute -bottom-10 font-black text-slate-300 text-2xl">B</span>
+        </div>
+        <div id="peg-2" class="relative w-4 h-64 bg-slate-200 rounded-full flex justify-center">
+            <span class="absolute -bottom-10 font-black text-slate-300 text-2xl">C</span>
+        </div>
+
+        <!-- 원판들이 배치될 레이어 (JavaScript에서 생성) -->
+        <div id="board-canvas" class="absolute inset-0 pointer-events-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    // 설정값
+    const colors = [
+      '#6366f1', '#ec4899', '#f59e0b', '#10b981', 
+      '#3b82f6', '#8b5cf6', '#f43f5e', '#06b6d4'
+    ];
+
+    let state = {
+      n: 4,
+      speed: 700,
+      pegs: [[], [], []],
+      moves: [],
+      currentStep: 0,
+      isPlaying: false,
+      isAnimating: false,
+      diskElements: {}
+    };
+
+    // DOM 참조
+    const board = document.getElementById('board-canvas');
+    const logs = document.getElementById('logs-container');
+    const diskRange = document.getElementById('disk-range');
+    const speedRange = document.getElementById('speed-range');
+    const playPauseBtn = document.getElementById('play-pause');
+    const resetBtn = document.getElementById('reset');
+
+    // 하노이 알고리즘
+    function solve(n, from, to, aux) {
+      if (n === 0) return;
+      solve(n - 1, from, aux, to);
+      state.moves.push({ n, from, to });
+      solve(n - 1, aux, to, from);
+    }
+
+    // 시뮬레이터 초기화
+    function init() {
+      state.n = parseInt(diskRange.value);
+      state.speed = parseInt(speedRange.value);
+      state.pegs = [[], [], []];
+      state.moves = [];
+      state.currentStep = 0;
+      state.isPlaying = false;
+      state.isAnimating = false;
+      state.diskElements = {};
+      
+      board.innerHTML = '';
+      logs.innerHTML = '';
+      document.getElementById('disk-val').innerText = state.n;
+      document.getElementById('min-moves').innerText = Math.pow(2, state.n) - 1;
+      document.getElementById('current-moves').innerText = 0;
+      updatePlayBtn();
+
+      solve(state.n, 0, 2, 1);
+
+      // 원판 생성 및 초기 배치
+      for (let i = state.n; i >= 1; i--) {
+        createDisk(i);
+        state.pegs[0].push(i);
+      }
+      renderInitialPositions();
+    }
+
+    function createDisk(num) {
+      const el = document.createElement('div');
+      el.className = 'disk';
+      el.style.width = `${60 + num * 25}px`;
+      el.style.height = '24px';
+      el.style.backgroundColor = colors[num - 1];
+      el.style.color = 'white';
+      el.style.fontSize = '12px';
+      el.style.fontWeight = '800';
+      el.innerText = num;
+      board.appendChild(el);
+      state.diskElements[num] = el;
+    }
+
+    function getCoord(pegIdx, floorIdx) {
+      const pegEl = document.getElementById(`peg-${pegIdx}`);
+      const boardRect = board.getBoundingClientRect();
+      const pegRect = pegEl.getBoundingClientRect();
+
+      const x = pegRect.left - boardRect.left + pegRect.width / 2;
+      const y = boardRect.height - (floorIdx * 28) - 40; // 바닥 기준 높이
+      return { x, y };
+    }
+
+    function renderInitialPositions() {
+      state.pegs.forEach((disks, pIdx) => {
+        disks.forEach((dNum, fIdx) => {
+          const { x, y } = getCoord(pIdx, fIdx);
+          const el = state.diskElements[dNum];
+          el.style.left = `${x - el.offsetWidth / 2}px`;
+          el.style.top = `${y}px`;
+        });
+      });
+    }
+
+    // 핵심: 애니메이션 이동 함수
+    async function animateMove(dNum, from, to) {
+      state.isAnimating = true;
+      const el = state.diskElements[dNum];
+      const targetFloor = state.pegs[to].length;
+      
+      const startPos = getCoord(from, state.pegs[from].length);
+      const endPos = getCoord(to, targetFloor);
+      const peakY = 50; // 기둥 꼭대기 높이
+
+      // 1단계: 위로 상승
+      el.style.transition = `all ${state.speed * 0.3}ms ease-out`;
+      el.style.top = `${peakY}px`;
+      await wait(state.speed * 0.3);
+
+      // 2단계: 옆으로 이동
+      el.style.transition = `all ${state.speed * 0.4}ms ease-in-out`;
+      el.style.left = `${endPos.x - el.offsetWidth / 2}px`;
+      await wait(state.speed * 0.4);
+
+      // 3단계: 아래로 하강
+      el.style.transition = `all ${state.speed * 0.3}ms ease-in`;
+      el.style.top = `${endPos.y}px`;
+      await wait(state.speed * 0.3);
+
+      // 상태 업데이트
+      state.pegs[from].pop();
+      state.pegs[to].push(dNum);
+      state.isAnimating = false;
+    }
+
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function run() {
+      if (!state.isPlaying || state.currentStep >= state.moves.length) {
+        state.isPlaying = false;
+        updatePlayBtn();
+        return;
+      }
+
+      const move = state.moves[state.currentStep];
+      addLog(state.currentStep + 1, move.n, move.from, move.to);
+      
+      await animateMove(move.n, move.from, move.to);
+      
+      state.currentStep++;
+      document.getElementById('current-moves').innerText = state.currentStep;
+      
+      if (state.isPlaying) setTimeout(run, 100);
+    }
+
+    function addLog(step, disk, from, to) {
+      const pegNames = ['A', 'B', 'C'];
+      const log = document.createElement('div');
+      log.className = 'text-xs p-2 bg-slate-50 rounded-lg border border-slate-100 flex justify-between items-center animate-in fade-in slide-in-from-left-2';
+      log.innerHTML = `
+        <span class="font-bold text-slate-400">#${step}</span>
+        <span class="font-semibold text-slate-700">원판 ${disk}</span>
+        <span class="text-indigo-500 font-bold">${pegNames[from]} → ${pegNames[to]}</span>
+      `;
+      logs.prepend(log);
+    }
+
+    function updatePlayBtn() {
+      playPauseBtn.innerHTML = state.isPlaying 
+        ? `<i data-lucide="pause" class="w-5 h-5 fill-current"></i> 일시정지`
+        : `<i data-lucide="play" class="w-5 h-5 fill-current"></i> 시작하기`;
+      lucide.createIcons();
+    }
+
+    // 이벤트 리스너
+    playPauseBtn.addEventListener('click', () => {
+      state.isPlaying = !state.isPlaying;
+      updatePlayBtn();
+      if (state.isPlaying) run();
+    });
+
+    resetBtn.addEventListener('click', init);
+    diskRange.addEventListener('input', init);
+    speedRange.addEventListener('input', () => {
+      state.speed = parseInt(speedRange.value);
+    });
+
+    // 시작
+    init();
+
+  </script>
+</body>
+</html>
